@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student Wellness Monitor — Demo</title>
+<meta name="description" content="Interactive Student Wellness Monitor with mood tracking, streaks, badges, analytics, and CSV export. Single-file demo.">
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1020;
+    --panel: rgba(23, 27, 45, 0.6);
+    --text: #e6edf3;
+    --muted: #9aa4b2;
+    --teal: #14b8a6;
+    --purple: #8b5cf6;
+    --blue: #3b82f6;
+    --glow: 0 0 0 rgba(0,0,0,0);
+  }
+  .light {
+    --bg: #f5f7fb;
+    --panel: rgba(255, 255, 255, 0.8);
+    --text: #0b1020;
+    --muted: #4b5563;
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
+    background: radial-gradient(1200px 800px at 10% -10%, rgba(20,184,166,0.20), transparent 50%),
+                radial-gradient(900px 600px at 100% 0%, rgba(59,130,246,0.18), transparent 60%),
+                radial-gradient(700px 500px at 80% 100%, rgba(139,92,246,0.16), transparent 60%),
+                var(--bg);
+    color: var(--text);
+  }
+  .glass {
+    background: var(--panel);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  }
+  .neon {
+    box-shadow: 0 0 0 rgba(0,0,0,0), 0 0 24px rgba(20,184,166,0.25);
+  }
+  .neon-hover:hover { box-shadow: 0 0 24px rgba(20,184,166,0.45); }
+  .card-hover { transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+  .card-hover:hover { transform: translateY(-2px) scale(1.02); }
+  .mood-card { transition: transform .20s ease, box-shadow .20s ease, border-color .2s ease, background .2s ease; cursor:pointer; }
+  .mood-card:hover { transform: translateY(-2px) scale(1.03); }
+  .mood-card.active {
+    outline: 2px solid rgba(20,184,166,0.6);
+    box-shadow: 0 0 30px rgba(20,184,166,0.35), inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .fade-in { animation: fadeIn .35s ease forwards; opacity: 0; }
+  @keyframes fadeIn { to { opacity: 1; } }
+  .pulse-once { animation: pulseOnce .6s ease; }
+  @keyframes pulseOnce {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+  .ripple {
+    position: relative; overflow: hidden;
+  }
+  .ripple:after {
+    content: ""; position: absolute; border-radius: 9999px; transform: scale(0);
+    background: radial-gradient(circle, rgba(255,255,255,0.35) 10%, rgba(255,255,255,0) 60%);
+    width: 10rem; height: 10rem; opacity: 0; pointer-events: none;
+    transition: transform .5s ease, opacity .8s ease;
+  }
+  .ripple:active:after {
+    transform: scale(1); opacity: 1; transition: 0s;
+    left: var(--x); top: var(--y);
+  }
+  .badge-pop { animation: badgePop .6s cubic-bezier(.2,.9,.3,1.2); }
+  @keyframes badgePop {
+    0% { transform: scale(.6) rotate(-6deg); opacity: 0; }
+    60% { transform: scale(1.1) rotate(2deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0); }
+  }
+  .sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0 }
+  /* Tooltip width on mobile for chart tooltips (Chart.js uses canvas; we handle content length) */
+</style>
+</head>
+<body class="min-h-screen transition-colors duration-300">
+<!-- App Wrapper -->
+<div id="app" class="flex min-h-screen">
+  <!-- Sidebar -->
+  <aside class="hidden lg:flex w-64 flex-col p-5 gap-4 glass">
+    <div class="flex items-center gap-3">
+      <div class="h-10 w-10 rounded-xl bg-gradient-to-br from-teal-400 to-blue-500 flex items-center justify-center text-xl shadow-lg">🌿</div>
+      <div>
+        <h1 class="text-lg font-extrabold tracking-tight">Wellness Monitor</h1>
+        <p class="text-xs text-[color:var(--muted)]">Student Edition</p>
+      </div>
+    </div>
+    <nav class="mt-4 space-y-1 text-sm">
+      <button class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-label="Go to Dashboard">🏠 Dashboard</button>
+      <button class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-label="View History" id="openHistory">📜 History</button>
+      <button class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-label="Export CSV" id="exportCSV">⬇️ Export CSV</button>
+      <button class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-label="Generate README" id="genReadme">📄 Generate README</button>
+      <button class="w-full text-left px-3 py-2 rounded-lg hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-label="Publishing Guide" id="openPublishing">🌐 Publish</button>
+    </nav>
+    <div class="mt-auto">
+      <div class="flex items-center justify-between">
+        <span class="text-sm text-[color:var(--muted)]">Theme</span>
+        <button id="themeToggle" class="ripple flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500/30 to-teal-500/30 hover:from-indigo-500/40 hover:to-teal-500/40 transition">
+          <span class="text-lg">🌙</span><span class="text-sm">Dark</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 p-4 lg:p-6">
+    <!-- Top header (for smaller screens too) -->
+    <div class="flex items-center justify-between gap-4 mb-4">
+      <div class="flex items-center gap-3 lg:hidden">
+        <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-teal-400 to-blue-500 flex items-center justify-center text-lg shadow-lg">🌿</div>
+        <div>
+          <h1 class="text-base font-extrabold tracking-tight">Wellness Monitor</h1>
+          <p class="text-[11px] text-[color:var(--muted)]">Student Edition</p>
+        </div>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <button id="themeToggleTop" class="ripple px-3 py-2 rounded-lg glass hover:bg-white/10 transition" aria-label="Toggle Theme">🌙</button>
+        <button id="exportCSVTop" class="ripple px-3 py-2 rounded-lg glass hover:bg-white/10 transition" aria-label="Export CSV">⬇️</button>
+      </div>
+    </div>
+
+    <!-- Grid: Main panel and right panel -->
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <!-- Main center: mood input + result -->
+      <section class="xl:col-span-2 space-y-6">
+        <!-- Mood Input -->
+        <div class="glass rounded-2xl p-5 lg:p-6 card-hover neon">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">How are you feeling today?</h2>
+            <div class="text-sm text-[color:var(--muted)] flex items-center gap-2">
+              <span id="todayText"></span>
+              <span class="hidden sm:inline">•</span>
+              <button id="shuffleQuote" class="ripple px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-[color:var(--muted)]">New quote</button>
+            </div>
+          </div>
+
+          <!-- Mood Cards -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4" role="group" aria-label="Select your mood">
+            <!-- Card template instances -->
+            <button data-mood="Happy" class="mood-card glass rounded-2xl p-4 sm:p-5 flex flex-col items-center gap-2 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-pressed="false">
+              <span class="text-3xl sm:text-4xl">🙂</span>
+              <span class="font-semibold">Happy</span>
+              <span class="text-xs text-[color:var(--muted)]">Positive</span>
+            </button>
+            <button data-mood="Sad" class="mood-card glass rounded-2xl p-4 sm:p-5 flex flex-col items-center gap-2 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-pressed="false">
+              <span class="text-3xl sm:text-4xl">😢</span>
+              <span class="font-semibold">Sad</span>
+              <span class="text-xs text-[color:var(--muted)]">Negative</span>
+            </button>
+            <button data-mood="Stressed" class="mood-card glass rounded-2xl p-4 sm:p-5 flex flex-col items-center gap-2 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-pressed="false">
+              <span class="text-3xl sm:text-4xl">😟</span>
+              <span class="font-semibold">Stressed</span>
+              <span class="text-xs text-[color:var(--muted)]">Negative</span>
+            </button>
+            <button data-mood="Neutral" class="mood-card glass rounded-2xl p-4 sm:p-5 flex flex-col items-center gap-2 focus:outline-none focus:ring-2 focus:ring-teal-500" aria-pressed="false">
+              <span class="text-3xl sm:text-4xl">😐</span>
+              <span class="font-semibold">Neutral</span>
+              <span class="text-xs text-[color:var(--muted)]">Neutral</span>
+            </button>
+          </div>
+
+          <!-- Submit -->
+          <div class="mt-4 flex items-center justify-between">
+            <p class="text-sm text-[color:var(--muted)]">Click a card, then submit.</p>
+            <button id="submitMood" class="ripple px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-blue-500 text-white font-semibold hover:from-teal-400 hover:to-blue-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-40 disabled:cursor-not-allowed">
+              Submit mood
+            </button>
+          </div>
+        </div>
+
+        <!-- Recommendation / Result -->
+        <div id="resultCard" class="hidden glass rounded-2xl p-5 lg:p-6 card-hover">
+          <div class="flex items-start gap-4">
+            <div id="resultEmoji" class="text-3xl">✨</div>
+            <div class="flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-lg font-bold">Your check-in</h3>
+                <span id="resultSentiment" class="text-xs px-2 py-1 rounded-full bg-teal-500/15 text-teal-300 border border-teal-400/30">Positive</span>
+                <span id="resultTime" class="text-xs text-[color:var(--muted)]"></span>
+              </div>
+              <p id="resultText" class="mt-2 leading-relaxed"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quotes -->
+        <div class="glass rounded-2xl p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="h-9 w-9 rounded-lg bg-gradient-to-br from-purple-500/40 to-blue-500/40 flex items-center justify-center">💡</div>
+            <p id="quoteText" class="text-sm text-[color:var(--muted)] italic">You’ve got this. One step at a time.</p>
+          </div>
+          <button id="shuffleQuote2" class="hidden sm:inline ripple px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-sm">Shuffle</button>
+        </div>
+      </section>
+
+      <!-- Right: charts + streak/badges -->
+      <aside class="space-y-6">
+        <!-- Streak + Badges -->
+        <div class="glass rounded-2xl p-5 card-hover">
+          <div class="flex items-center justify-between">
+            <h3 class="text-lg font-bold">Your progress</h3>
+            <span id="streakText" class="text-sm text-teal-300">0-day streak</span>
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-3">
+            <div class="rounded-xl p-4 bg-white/5">
+              <div class="text-xs text-[color:var(--muted)]">Current Streak</div>
+              <div class="text-2xl font-extrabold" id="streakCount">0</div>
+            </div>
+            <div class="rounded-xl p-4 bg-white/5">
+              <div class="text-xs text-[color:var(--muted)]">Total Check-ins</div>
+              <div class="text-2xl font-extrabold" id="totalCheckins">0</div>
+            </div>
+          </div>
+          <div class="mt-4">
+            <div class="text-sm font-semibold mb-2">Badges</div>
+            <div id="badgeList" class="flex flex-wrap gap-2">
+              <!-- Badges appear here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Line Chart -->
+        <div class="glass rounded-2xl p-5 card-hover">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-lg font-bold">Mood Trend</h3>
+            <span class="text-xs text-[color:var(--muted)]">Live</span>
+          </div>
+          <canvas id="lineChart" aria-label="Line chart for mood trend over time" role="img" height="170"></canvas>
+        </div>
+
+        <!-- Donut Chart -->
+        <div class="glass rounded-2xl p-5 card-hover">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-lg font-bold">Mood Mix</h3>
+            <span class="text-xs text-[color:var(--muted)]">Distribution</span>
+          </div>
+          <canvas id="pieChart" aria-label="Donut chart for mood distribution" role="img" height="180"></canvas>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<!-- History Modal -->
+<div id="historyModal" class="fixed inset-0 hidden items-center justify-center p-4 z-40">
+  <div class="absolute inset-0 bg-black/60"></div>
+  <div class="relative glass rounded-2xl p-5 w-full max-w-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-lg font-bold">Mood History</h3>
+      <button id="closeHistory" class="ripple px-2 py-1 rounded-lg hover:bg-white/10" aria-label="Close history">✖️</button>
+    </div>
+    <div id="historyList" class="max-h-[60vh] overflow-y-auto pr-1 space-y-2 text-sm"></div>
+  </div>
+</div>
+
+<!-- Publishing Guide Modal -->
+<div id="publishingModal" class="fixed inset-0 hidden items-center justify-center p-4 z-40">
+  <div class="absolute inset-0 bg-black/60"></div>
+  <div class="relative glass rounded-2xl p-5 w-full max-w-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-lg font-bold">Publish to GitHub & Web</h3>
+      <button id="closePublishing" class="ripple px-2 py-1 rounded-lg hover:bg-white/10" aria-label="Close">✖️</button>
+    </div>
+    <ol class="list-decimal pl-5 space-y-2 text-sm text-[color:var(--muted)]">
+      <li>Create a public GitHub repo (e.g., student-wellness-monitor).</li>
+      <li>Download this single file as index.html (use your browser’s Save Page or copy-paste).</li>
+      <li>Commit and push index.html to the repo root.</li>
+      <li>Add a README.md (use “Generate README” button) and a screenshot later.</li>
+      <li>Enable GitHub Pages: Settings → Pages → Deploy from branch → main / root.</li>
+      <li>Open the published URL GitHub gives you. Done!</li>
+    </ol>
+    <div class="mt-3 text-xs text-[color:var(--muted)]">
+      Note: This single-file demo stores data in your browser. To add a real backend, connect to your own API later.
+    </div>
+  </div>
+</div>
+
+<!-- Mini Assistant -->
+<button id="assistantBtn" class="fixed bottom-5 right-5 z-30 ripple rounded-full p-3 bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-xl hover:scale-[1.03] transition" aria-label="Open help">
+  💬
+</button>
+<div id="assistantPanel" class="fixed bottom-20 right-5 z-30 hidden w-[min(90vw,360px)] glass rounded-2xl p-4">
+  <div class="flex items-center justify-between mb-2">
+    <div class="font-bold">Wellness Assistant</div>
+    <button id="assistantClose" class="ripple px-2 py-1 rounded-lg hover:bg-white/10" aria-label="Close help">✖️</button>
+  </div>
+  <div id="assistantLog" class="space-y-2 max-h-64 overflow-y-auto pr-1 text-sm">
+    <div class="p-3 rounded-xl bg-white/5">Hi! Ask about streaks, exporting CSV, or publishing.</div>
+  </div>
+  <div class="mt-3 grid grid-cols-2 gap-2">
+    <button class="assistBtn ripple px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-left" data-q="What is this?">What is this?</button>
+    <button class="assistBtn ripple px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-left" data-q="How are streaks calculated?">Streaks?</button>
+    <button class="assistBtn ripple px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-left" data-q="How do I export CSV?">Export CSV</button>
+    <button class="assistBtn ripple px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-left" data-q="How do I publish this?">Publish</button>
+  </div>
+</div>
+
+<!-- Accessibility helper -->
+<div class="sr-only" aria-live="polite" id="ariaLive"></div>
+
+<script>
+/* ----------------------------
+   Data & Utilities
+----------------------------- */
+const STORAGE_KEY = 'wellness_v1_entries';
+const THEME_KEY = 'wellness_theme';
+const BADGES_KEY = 'wellness_badges';
+
+const moodMeta = {
+  Happy:   { emoji: '🙂', sentiment: 'Positive', weight: 3, color: '#22d3ee', gradient: ['from-teal-500/20','to-blue-500/20'] },
+  Sad:     { emoji: '😢', sentiment: 'Negative', weight: 1, color: '#f43f5e', gradient: ['from-pink-500/20','to-purple-500/20'] },
+  Stressed:{ emoji: '😟', sentiment: 'Negative', weight: 2, color: '#f59e0b', gradient: ['from-amber-500/20','to-red-500/20'] },
+  Neutral: { emoji: '😐', sentiment: 'Neutral',  weight: 2, color: '#94a3b8', gradient: ['from-slate-400/20','to-slate-500/20'] },
+};
+
+const quoteBank = [
+  "Small steps lead to big changes 🌱",
+  "Breathe in calm, breathe out stress 🌬️",
+  "Progress, not perfection ✨",
+  "You’re doing better than you think 💫",
+  "One mindful minute can shift your day ⏳",
+  "Rest is productive too 😌",
+  "Feelings are data, not directives 📈",
+  "Today’s check-in is a win ✅",
+];
+
+const recTemplates = {
+  Happy: [
+    "Love that energy! Keep it going with a quick gratitude note 🙌",
+    "You’re glowing! Share a smile with someone today 😊",
+    "Ride the wave and set a tiny goal to celebrate 🎯",
+  ],
+  Sad: [
+    "It’s okay to feel low. Try a short walk and a kind text to yourself 💙",
+    "Be gentle today. Hydrate and play a comfort song 🎵",
+    "Lean on your support—one message can help 🤝",
+  ],
+  Stressed: [
+    "Pause for 4-7-8 breathing and list 1 priority 🌬️",
+    "Break tasks into tiny steps and take a 2-minute stretch 🧘",
+    "Declutter your desk and sip water—micro reset 🔄",
+  ],
+  Neutral: [
+    "Steady is great. Add a small joy: 5-minute stretch or fresh air 🍃",
+    "Consider a mini challenge to spark momentum ⚡",
+    "Log one win from today—big or small 📝",
+  ]
+};
+
+function pick(array) { return array[Math.floor(Math.random()*array.length)] }
+function formatTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString([], { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+function todayKey(date = new Date()) {
+  return date.toISOString().slice(0,10); // YYYY-MM-DD
+}
+function daysBetween(a, b) {
+  const d1 = new Date(a), d2 = new Date(b);
+  d1.setHours(0,0,0,0); d2.setHours(0,0,0,0);
+  return Math.round((d2 - d1) / 86400000);
+}
+function saveEntries(entries) { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }
+function loadEntries() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; } }
+function saveBadges(b) { localStorage.setItem(BADGES_KEY, JSON.stringify(b)); }
+function loadBadges() { try { return JSON.parse(localStorage.getItem(BADGES_KEY)) || []; } catch { return []; } }
+
+function generateRecommendation(mood) {
+  // If a real AI API is configured, you could call it here.
+  // For this demo, we rotate high-quality templates deterministically by date for variety.
+  const pool = recTemplates[mood] || ["Take a mindful pause 🌿"];
+  const index = new Date().getDate() % pool.length;
+  return pool[index];
+}
+
+function speakAria(msg) {
+  const el = document.getElementById('ariaLive');
+  el.textContent = '';
+  setTimeout(()=> { el.textContent = msg; }, 50);
+}
+
+/* ----------------------------
+   Theme
+----------------------------- */
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === 'light') {
+    root.classList.add('light');
+  } else {
+    root.classList.remove('light');
+  }
+  document.querySelectorAll('#themeToggle, #themeToggleTop').forEach(btn=>{
+    btn.innerHTML = theme === 'light' ? '☀️' : '🌙';
+    btn.setAttribute('aria-label', theme === 'light' ? 'Switch to dark' : 'Switch to light');
+  });
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+/* ----------------------------
+   Charts
+----------------------------- */
+let lineChart, pieChart;
+
+function initCharts() {
+  const ctxLine = document.getElementById('lineChart').getContext('2d');
+  const ctxPie = document.getElementById('pieChart').getContext('2d');
+
+  lineChart = new Chart(ctxLine, {
+    type: 'line',
+    data: { labels: [], datasets: [{
+      label: 'Mood Score',
+      data: [],
+      borderColor: 'rgba(34,211,238,0.8)',
+      backgroundColor: 'rgba(34,211,238,0.2)',
+      tension: 0.35,
+      fill: true,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+    }]},
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') } },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const i = items[0].dataIndex;
+              return lineChart.data.labels[i] || '';
+            },
+            label: (item) => {
+              const i = item.dataIndex;
+              const meta = item.chart.$metaEntries?.[i];
+              return `Mood: ${meta?.mood || ''}`;
+            },
+            afterLabel: (item) => {
+              const i = item.dataIndex;
+              const meta = item.chart.$metaEntries?.[i];
+              if (!meta) return '';
+              return [`Sentiment: ${meta.sentiment}`, `Tip: ${meta.rec.slice(0,40)}${meta.rec.length>40?'...':''}`];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--muted') },
+             grid: { color: 'rgba(255,255,255,0.06)' } },
+        y: { suggestedMin: 0, suggestedMax: 4,
+             ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--muted'), stepSize: 1 },
+             grid: { color: 'rgba(255,255,255,0.06)' } }
+      }
+    }
+  });
+  // Custom slot for meta (date/mood/sentiment/rec)
+  lineChart.$metaEntries = [];
+
+  pieChart = new Chart(ctxPie, {
+    type: 'doughnut',
+    data: {
+      labels: ['Happy','Sad','Stressed','Neutral'],
+      datasets: [{
+        data: [0,0,0,0],
+        backgroundColor: ['#22d3ee', '#f43f5e', '#f59e0b', '#94a3b8'],
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text') } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const label = ctx.label || '';
+              const val = ctx.parsed || 0;
+              const total = ctx.dataset.data.reduce((a,b)=>a+b,0) || 1;
+              const pct = Math.round(100 * val / total);
+              return `${label}: ${pct}%`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function refreshCharts(entries) {
+  // Sort by time asc
+  const ordered = [...entries].sort((a,b)=>a.ts - b.ts);
+  const labels = ordered.map(e => new Date(e.ts).toLocaleDateString([], { month:'short', day:'numeric'}));
+  const data = ordered.map(e => moodMeta[e.mood]?.weight || 0);
+
+  lineChart.data.labels = labels;
+  lineChart.data.datasets[0].data = data;
+  lineChart.$metaEntries = ordered.map(e => ({
+    date: e.ts, mood: e.mood, sentiment: moodMeta[e.mood]?.sentiment || 'Neutral', rec: e.rec
+  }));
+  lineChart.update('none');
+
+  const counts = {Happy:0, Sad:0, Stressed:0, Neutral:0};
+  ordered.forEach(e => counts[e.mood] = (counts[e.mood]||0) + 1);
+  pieChart.data.datasets[0].data = ['Happy','Sad','Stressed','Neutral'].map(k => counts[k]||0);
+  pieChart.update('none');
+}
+
+/* ----------------------------
+   Streaks & Badges
+----------------------------- */
+const badgeDefs = [
+  { id: 'streak-3',  emoji:'🎉', label:'3-Day Streak', threshold: 3 },
+  { id: 'streak-7',  emoji:'🏅', label:'7-Day Wellness Hero', threshold: 7 },
+  { id: 'streak-14', emoji:'🏆', label:'14-Day Champion', threshold: 14 },
+];
+
+function calculateStreak(entries) {
+  if (!entries.length) return 0;
+  const days = new Set(entries.map(e => todayKey(new Date(e.ts))));
+  let streak = 0;
+  let day = new Date(); day.setHours(0,0,0,0);
+  while (days.has(todayKey(day))) {
+    streak++;
+    day = new Date(day.getTime() - 86400000);
+  }
+  return streak;
+}
+
+function renderBadges(streak) {
+  const container = document.getElementById('badgeList');
+  const owned = new Set(loadBadges());
+  let newEarned = [];
+  badgeDefs.forEach(b => {
+    if (streak >= b.threshold && !owned.has(b.id)) {
+      owned.add(b.id);
+      newEarned.push(b);
+    }
+  });
+  if (newEarned.length) saveBadges([...owned]);
+
+  container.innerHTML = '';
+  [...badgeDefs].forEach(b => {
+    const has = owned.has(b.id) || (streak >= b.threshold);
+    const el = document.createElement('div');
+    el.className = 'px-3 py-2 rounded-xl border border-white/10 ' + (has ? 'bg-gradient-to-r from-teal-500/20 to-blue-500/20' : 'bg-white/5 opacity-60');
+    el.textContent = `${b.emoji} ${b.label}`;
+    if (newEarned.find(x=>x.id===b.id)) {
+      el.classList.add('badge-pop');
+      celebrate();
+    }
+    container.appendChild(el);
+  });
+}
+
+function celebrate() {
+  // Simple confetti-like floating emojis
+  for (let i=0;i<10;i++){
+    const span = document.createElement('span');
+    span.textContent = ['🎉','✨','🎊','🌟'][Math.floor(Math.random()*4)];
+    span.style.position = 'fixed';
+    span.style.left = (Math.random()*100)+'%';
+    span.style.top = '100%';
+    span.style.fontSize = (14 + Math.random()*14)+'px';
+    span.style.pointerEvents = 'none';
+    span.style.zIndex = 50;
+    document.body.appendChild(span);
+    const duration = 1200 + Math.random()*800;
+    span.animate([
+      { transform: 'translateY(0) rotate(0deg)', opacity: 1 },
+      { transform: `translateY(-${60 + Math.random()*140}vh) rotate(${Math.random()>0.5?'' : '-'}${180 + Math.random()*180}deg)`, opacity: 0 }
+    ], { duration, easing:'cubic-bezier(.2,.8,.2,1)' }).onfinish = ()=> span.remove();
+  }
+}
+
+/* ----------------------------
+   History Modal
+----------------------------- */
+function openHistoryModal(entries) {
+  const modal = document.getElementById('historyModal');
+  const list = document.getElementById('historyList');
+  list.innerHTML = '';
+  const ordered = [...entries].sort((a,b)=>b.ts - a.ts);
+  if (!ordered.length) {
+    list.innerHTML = '<div class="p-3 rounded-lg bg-white/5">No entries yet. Log a mood to get started.</div>';
+  } else {
+    ordered.forEach(e=>{
+      const row = document.createElement('div');
+      row.className = 'p-3 rounded-lg bg-white/5 flex items-start gap-3';
+      const mm = moodMeta[e.mood] || {};
+      row.innerHTML = `
+        <div class="text-xl">${mm.emoji || '📝'}</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold">${e.mood}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full border ${e.mood==='Happy'?'border-teal-400/40 text-teal-300':'border-white/15 text-[color:var(--muted)]'}">${mm.sentiment||'Neutral'}</span>
+            <span class="text-xs text-[color:var(--muted)]">${formatTime(e.ts)}</span>
+          </div>
+          <div class="text-sm mt-1">${e.rec}</div>
+        </div>
+      `;
+      list.appendChild(row);
+    });
+  }
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+
+function closeHistoryModal() {
+  const modal = document.getElementById('historyModal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
+/* ----------------------------
+   CSV & README
+----------------------------- */
+function exportCSV(entries) {
+  const header = ['timestamp','date','mood','sentiment','recommendation'];
+  const rows = entries.map(e => [
+    e.ts,
+    new Date(e.ts).toISOString(),
+    e.mood,
+    moodMeta[e.mood]?.sentiment || 'Neutral',
+    (e.rec||'').replace(/\n/g, ' ')
+  ]);
+  const csv = [header, ...rows].map(r=> r.map(v=>{
+    const s = String(v);
+    if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+    return s;
+  }).join(',')).join('\n');
+
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'wellness_history.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
+
+function generateReadme() {
+  const content = `# Student Wellness Monitor (Demo)
+
+A modern, interactive Student Wellness Monitor focused on quick daily check-ins with live analytics, streaks, and badges. This is a single-file demo (frontend-only) designed for instant previews and easy publishing.
+
+## Features
+- Mood Input with big, clickable cards (🙂 Happy, 😢 Sad, 😟 Stressed, 😐 Neutral)
+- Instant recommendation with sentiment
+- Live charts (trend + distribution) updated on each check-in
+- Streaks and milestone badges (🎉 3-day, 🏅 7-day, 🏆 14-day)
+- Dark mode first with neon accents + light mode toggle
+- Motivational quotes
+- Mini in-app assistant for help
+- CSV export of mood history
+- Mobile-responsive with glassmorphism styling
+
+## Tech Stack
+- HTML + Tailwind CSS
+- Chart.js
+- LocalStorage for data (no backend)
+
+## Run Locally
+Just open index.html in your browser.
+No build step required.
+
+## Deploy (GitHub Pages)
+1. Create a new public repo (e.g., student-wellness-monitor).
+2. Add index.html to the repo root.
+3. Commit and push to main.
+4. Enable GitHub Pages: Settings → Pages → Deploy from branch → Branch “main”, folder “root”.
+5. Visit the published URL.
+
+## Screenshots
+_Add screenshots here (e.g., dashboard above the fold)._
+
+## Notes
+- This demo stores data in the browser (LocalStorage).
+- To add a real backend or AI integration, connect to your own API and replace the recommendation generator.
+
+## License
+MIT
+`;
+  const blob = new Blob([content], { type:'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'README.md';
+  document.body.appendChild(a);
+  a.click();
+  a.remove(); URL.revokeObjectURL(url);
+}
+
+/* ----------------------------
+   Mood Submission Flow
+----------------------------- */
+let selectedMood = null;
+
+function setSelectedMood(mood) {
+  selectedMood = mood;
+  document.querySelectorAll('.mood-card').forEach(card=>{
+    const isActive = card.dataset.mood === mood;
+    card.classList.toggle('active', isActive);
+    card.setAttribute('aria-pressed', String(isActive));
+  });
+  document.getElementById('submitMood').disabled = !mood;
+}
+
+function submitMood() {
+  if (!selectedMood) return;
+
+  // Simulated async submission (frontend-only demo)
+  // This mimics an AJAX flow: immediate local update without full page reload.
+  const now = Date.now();
+  const rec = generateRecommendation(selectedMood);
+  const entry = { id: cryptoRandomId(), ts: now, mood: selectedMood, rec };
+
+  const entries = loadEntries();
+  entries.push(entry);
+  saveEntries(entries);
+
+  renderAfterSubmit(entry);
+  refreshCharts(entries);
+  updateStatsAndBadges(entries);
+
+  speakAria(`Mood submitted: ${selectedMood}`);
+}
+
+function cryptoRandomId() {
+  try {
+    return crypto.getRandomValues(new Uint32Array(4)).join('-');
+  } catch {
+    return String(Math.random()).slice(2);
+  }
+}
+
+function renderAfterSubmit(entry) {
+  const mm = moodMeta[entry.mood] || {};
+  const result = document.getElementById('resultCard');
+  const sent = document.getElementById('resultSentiment');
+  const time = document.getElementById('resultTime');
+  const text = document.getElementById('resultText');
+  const emoji = document.getElementById('resultEmoji');
+
+  emoji.textContent = mm.emoji || '✨';
+  sent.textContent = mm.sentiment || 'Neutral';
+  sent.className = 'text-xs px-2 py-1 rounded-full border ' +
+    (mm.sentiment==='Positive' ? 'bg-teal-500/15 text-teal-300 border-teal-400/30' :
+     mm.sentiment==='Negative' ? 'bg-pink-500/15 text-pink-300 border-pink-400/30' :
+     'bg-white/10 text-[color:var(--muted)] border-white/15');
+  time.textContent = formatTime(entry.ts);
+  text.textContent = entry.rec;
+
+  result.classList.remove('hidden');
+  result.classList.add('fade-in');
+  setTimeout(()=> result.classList.remove('fade-in'), 400);
+}
+
+/* ----------------------------
+   Stats & Badges Render
+----------------------------- */
+function updateStatsAndBadges(entries) {
+  const streak = calculateStreak(entries);
+  const total = entries.length;
+  document.getElementById('streakCount').textContent = streak;
+  document.getElementById('streakText').textContent = `${streak}-day streak`;
+  document.getElementById('totalCheckins').textContent = total;
+  renderBadges(streak);
+}
+
+/* ----------------------------
+   Assistant
+----------------------------- */
+const assistantReplies = {
+  "What is this?": "This is a quick daily check-in tool for tracking your mood, seeing trends, and building healthy streaks. Try tapping a card and submitting!",
+  "How are streaks calculated?": "Your streak counts consecutive days with at least one check-in—no need to log multiple times per day.",
+  "How do I export CSV?": "Use Export CSV from the sidebar or top-right. It downloads your history as a file you can open in Excel or Google Sheets.",
+  "How do I publish this?": "Click Publish in the sidebar for step-by-step GitHub Pages instructions. It only takes a minute!"
+};
+
+function assistantAdd(msg, from='assistant') {
+  const log = document.getElementById('assistantLog');
+  const bubble = document.createElement('div');
+  bubble.className = 'p-3 rounded-xl ' + (from==='user' ? 'bg-gradient-to-r from-teal-500/20 to-blue-500/20 ml-auto max-w-[85%]' : 'bg-white/5 mr-auto max-w-[90%]');
+  bubble.textContent = msg;
+  log.appendChild(bubble);
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ----------------------------
+   Quotes
+----------------------------- */
+function setQuote(random = true) {
+  const el = document.getElementById('quoteText');
+  if (random) {
+    el.textContent = pick(quoteBank);
+  } else {
+    const i = new Date().getDate() % quoteBank.length;
+    el.textContent = quoteBank[i];
+  }
+}
+
+/* ----------------------------
+   Init & Events
+----------------------------- */
+function init() {
+  // Theme init
+  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+
+  // Date text
+  document.getElementById('todayText').textContent = new Date().toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' });
+
+  // Quotes
+  setQuote(false);
+  document.getElementById('shuffleQuote').addEventListener('click', ()=> setQuote(true));
+  document.getElementById('shuffleQuote2').addEventListener('click', ()=> setQuote(true));
+
+  // Mood cards
+  document.querySelectorAll('.mood-card').forEach(card=>{
+    card.addEventListener('click', ()=> setSelectedMood(card.dataset.mood));
+    card.addEventListener('keydown', (e)=> {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedMood(card.dataset.mood); }
+    });
+  });
+
+  // Submit
+  document.getElementById('submitMood').addEventListener('click', (e)=>{
+    setRipple(e);
+    submitMood();
+  });
+
+  // Theme toggles
+  document.getElementById('themeToggle').addEventListener('click', (e)=> {
+    setRipple(e);
+    const current = localStorage.getItem(THEME_KEY) || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+  document.getElementById('themeToggleTop').addEventListener('click', (e)=> {
+    setRipple(e);
+    const current = localStorage.getItem(THEME_KEY) || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+
+  // Charts
+  initCharts();
+
+  // Load initial data
+  const entries = loadEntries();
+  refreshCharts(entries);
+  updateStatsAndBadges(entries);
+
+  // Pre-fill last result if exists
+  if (entries.length) {
+    renderAfterSubmit(entries[entries.length - 1]);
+  }
+
+  // History modal
+  document.getElementById('openHistory').addEventListener('click', ()=> openHistoryModal(loadEntries()));
+  document.getElementById('closeHistory').addEventListener('click', closeHistoryModal);
+  document.getElementById('historyModal').addEventListener('click', (e)=> { if (e.target.id === 'historyModal') closeHistoryModal(); });
+
+  // Publishing modal
+  document.getElementById('openPublishing').addEventListener('click', ()=>{
+    const modal = document.getElementById('publishingModal');
+    modal.classList.remove('hidden'); modal.classList.add('flex');
+  });
+  document.getElementById('closePublishing').addEventListener('click', ()=>{
+    const modal = document.getElementById('publishingModal');
+    modal.classList.add('hidden'); modal.classList.remove('flex');
+  });
+  document.getElementById('publishingModal').addEventListener('click', (e)=> { if (e.target.id === 'publishingModal') {
+    const modal = document.getElementById('publishingModal'); modal.classList.add('hidden'); modal.classList.remove('flex');
+  } });
+
+  // CSV + README
+  document.getElementById('exportCSV').addEventListener('click', ()=> exportCSV(loadEntries()));
+  document.getElementById('exportCSVTop').addEventListener('click', ()=> exportCSV(loadEntries()));
+  document.getElementById('genReadme').addEventListener('click', generateReadme);
+
+  // Assistant
+  document.getElementById('assistantBtn').addEventListener('click', ()=> {
+    document.getElementById('assistantPanel').classList.toggle('hidden');
+  });
+  document.getElementById('assistantClose').addEventListener('click', ()=> {
+    document.getElementById('assistantPanel').classList.add('hidden');
+  });
+  document.querySelectorAll('.assistBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const q = btn.dataset.q;
+      assistantAdd(q, 'user');
+      setTimeout(()=> assistantAdd(assistantReplies[q] || "I don't have that answer yet, but you can check the sidebar!"), 200);
+    });
+  });
+
+  // Keep main hero items above the fold: done by layout and compact spacing
+}
+
+function setRipple(e) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = (e.clientX - rect.left) + 'px';
+  const y = (e.clientY - rect.top) + 'px';
+  e.currentTarget.style.setProperty('--x', x);
+  e.currentTarget.style.setProperty('--y', y);
+}
+
+window.addEventListener('load', init);
+
+/* ----------------------------
+   Accessibility & Keyboard
+----------------------------- */
+document.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape') {
+    document.getElementById('historyModal').classList.add('hidden');
+    document.getElementById('publishingModal').classList.add('hidden');
+    document.getElementById('assistantPanel').classList.add('hidden');
+  }
+});
+</script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97e5ce31423db2bb',t:'MTc1Nzc0NzIyMy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
